@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { env } from '@/lib/env.mjs';
+import { semanticSearch } from '@/lib/db/openai/selector';
 
 // 初始化 OpenAI 客户端
 const openai = new OpenAI({
@@ -129,4 +130,25 @@ export async function generateEmbeddings(
     console.error('生成嵌入向量失败:', error);
     throw new Error(`生成嵌入向量失败: ${error instanceof Error ? error.message : '未知错误'}`);
   }
+}
+
+// 生成单个embedding
+export async function generateSingleEmbedding(text: string) {
+  const embedding = await openai.embeddings.create({
+    model: env.EMBEDDING,
+    input: text,
+    encoding_format: 'float'
+  });
+  return embedding.data[0].embedding;
+}
+
+// 检索召回
+export async function searchEmbedding(text: string, threshold: number = 0.7, limit: number = 10) {
+  const embedding = await generateSingleEmbedding(text);
+  const results = await semanticSearch({
+    queryEmbedding: embedding,
+    threshold,
+    limit
+  });
+  return results;
 }
