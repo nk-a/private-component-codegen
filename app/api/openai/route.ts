@@ -1,35 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { env } from '@/lib/env.mjs';
-import { semanticSearch } from '@/lib/db/openai/selector';
 import { getSystemPrompt } from '@/lib/prompt';
 import { z } from 'zod';
-
-// 请求体验证模式
-const ChatRequestSchema = z.object({
-  messages: z.array(
-    z.object({
-      role: z.enum(['user', 'assistant', 'system']),
-      content: z.string()
-    })
-  ),
-  searchThreshold: z.number().min(0).max(1).default(0.7),
-  searchLimit: z.number().min(1).max(20).default(5),
-  model: z.string().default('gpt-3.5-turbo'),
-  temperature: z.number().min(0).max(2).default(0.7),
-  maxTokens: z.number().min(1).max(4000).default(1000)
-});
+import { searchEmbedding } from './embedding';
+import { OpenAiRequest } from './types';
 
 // 响应数据类型
-interface ChatResponse {
-  type: 'content' | 'related' | 'done';
-  data: string;
-  relatedContent?: Array<{
-    id: string;
-    content: string;
-    similarity: number;
-  }>;
-}
 
 // 初始化 OpenAI 客户端
 const openai = new OpenAI({
@@ -40,92 +17,48 @@ const openai = new OpenAI({
 export async function POST(request: NextRequest) {
   try {
     // 解析请求体
-    const body = await request.json();
-    const validatedData = ChatRequestSchema.parse(body);
-
-    const { messages, searchThreshold = 0.7, searchLimit = 3, temperature = 0.7 } = validatedData;
+    const { message } = (await request.json()) as OpenAiRequest;
 
     // 获取最后一条用户消息
-    const lastUserMessage = messages.filter((msg) => msg.role === 'user').pop();
+    const lastUserMessage = message[message.length - 1];
+    const lastUserMessageContent = lastUserMessage.content as string;
 
     if (!lastUserMessage) {
       return NextResponse.json({ error: '没有找到用户消息' }, { status: 400 });
     }
 
-    // 创建向量嵌入
-    const embeddingResponse = await openai.embeddings.create({
-      model: env.EMBEDDING,
-      input: lastUserMessage.content
-    });
+    const searchResults = await searchEmbedding(lastUserMessageContent, 0.5, 3);
 
-    const queryEmbedding = embeddingResponse.data[0].embedding;
-
-    // 执行语义搜索
-    const searchResults = await semanticSearch({
-      queryEmbedding,
-      threshold: searchThreshold,
-      limit: searchLimit
-    });
-
-    // 构建系统提示词，整合相关内容
-    const relatedContentText =
-      searchResults.length > 0
-        ? `\n\n相关参考内容：\n${searchResults
-            .map(
-              (result, index) =>
-                `${index + 1}. ${result.content} (相似度: ${(result.similarity * 100).toFixed(1)}%)`
-            )
-            .join('\n')}`
-        : '';
-
+    const reference = searchResults.map((result) => result.content).join('\n\n');
     // 使用全局prompt，将相关内容作为参考传递
-    const systemPrompt = getSystemPrompt(relatedContentText);
+    const systemPrompt = getSystemPrompt(reference);
 
     // 创建流式对话
     const stream = await openai.chat.completions.create({
       model: env.MODEL,
-      messages: [{ role: 'system', content: systemPrompt }, ...messages],
-      temperature,
+      messages: [{ role: 'system', content: systemPrompt }, ...message],
+      temperature: 0.7,
       stream: true
     });
 
     // 创建 ReadableStream 用于 SSE
     const readableStream = new ReadableStream({
       async start(controller) {
-        const encoder = new TextEncoder();
-
-        // 首先发送相关内容
-        if (searchResults.length > 0) {
-          const relatedResponse: ChatResponse = {
-            type: 'related',
-            data: '找到相关内容',
-            relatedContent: searchResults
-          };
-
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(relatedResponse)}\n\n`));
-        }
-
         // 处理流式响应
         for await (const chunk of stream) {
           const content = chunk.choices[0]?.delta?.content;
 
           if (content) {
-            const response: ChatResponse = {
-              type: 'content',
-              data: content
+            const response = {
+              content: content,
+              references: searchResults
             };
 
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify(response)}\n\n`));
+            controller.enqueue(`data: ${JSON.stringify(response)}\n\n`);
           }
         }
 
-        // 发送完成信号
-        const doneResponse: ChatResponse = {
-          type: 'done',
-          data: '对话完成'
-        };
-
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(doneResponse)}\n\n`));
+        controller.enqueue(`data: [DONE]\n\n`);
 
         controller.close();
       }

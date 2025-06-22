@@ -10,7 +10,7 @@ import { openAiEmbeddings, type NewOpenAiEmbedding } from './schema';
  */
 export async function saveOpenAiEmbeddings(
   embeddings: Array<{ embedding: number[]; content: string }>
-): Promise<number> {
+) {
   try {
     // 将输入数据转换为数据库格式
     const records: NewOpenAiEmbedding[] = embeddings.map((item) => ({
@@ -19,10 +19,10 @@ export async function saveOpenAiEmbeddings(
     }));
 
     // 批量插入数据
-    await db.insert(openAiEmbeddings).values(records);
+    const result = await db.insert(openAiEmbeddings).values(records);
 
     // 返回插入的记录数量
-    return embeddings.length;
+    return { success: true, data: result };
   } catch (error) {
     console.error('保存 OpenAI embeddings 失败:', error);
     throw new Error(`保存 embeddings 失败: ${error instanceof Error ? error.message : '未知错误'}`);

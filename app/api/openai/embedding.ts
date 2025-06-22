@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import { env } from '@/lib/env.mjs';
-import { semanticSearch } from '@/lib/db/openai/selector';
+import { searchSimilarContent } from '@/lib/db/openai/selector';
 
 // 初始化 OpenAI 客户端
 const openai = new OpenAI({
@@ -143,12 +143,8 @@ export async function generateSingleEmbedding(text: string) {
 }
 
 // 检索召回
-export async function searchEmbedding(text: string, threshold: number = 0.7, limit: number = 10) {
+export async function searchEmbedding(text: string, threshold: number = 0.5, limit: number = 10) {
   const embedding = await generateSingleEmbedding(text);
-  const results = await semanticSearch({
-    queryEmbedding: embedding,
-    threshold,
-    limit
-  });
+  const results = await searchSimilarContent(embedding, threshold, limit);
   return results;
 }

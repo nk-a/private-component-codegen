@@ -10,13 +10,12 @@ export async function embedDocs() {
   );
   const embeddings = await generateEmbeddings(docs);
   console.log('done');
-  const result = await saveOpenAiEmbeddings(
+  await saveOpenAiEmbeddings(
     embeddings.map((item) => ({
       content: item.text,
       embedding: item.embedding
     }))
   );
-  console.log(result);
   return embeddings;
 }
 
