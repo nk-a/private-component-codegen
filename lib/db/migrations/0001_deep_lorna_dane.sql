@@ -1,0 +1,1 @@
+ALTER TABLE "open_ai_embeddings" ALTER COLUMN "content" SET DATA TYPE text;
