@@ -15,6 +15,13 @@
       "when": 1750563767500,
       "tag": "0001_deep_lorna_dane",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1751729071248,
+      "tag": "0002_graceful_nitro",
+      "breakpoints": true
     }
   ]
 }
